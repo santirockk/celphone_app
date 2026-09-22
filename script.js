@@ -16,7 +16,7 @@ const startBtn = document.getElementById('startBtn');
    ------------------------------------------------------------ */
 
 const BASE_COLOR       = [120, 120, 120];  // color en reposo
-const MAX_DISTANCE_CM  = 30;               // 30 cm → color completo
+const MAX_DISTANCE_CM  = 10;               // 30 cm → color completo
 const MAX_ACCEL        = 25;               // m/s², límite anti-picos
 
 // Colores objetivo en cada dirección
@@ -38,10 +38,10 @@ const D_UP      = delta(COLOR_UP);
 const D_DOWN    = delta(COLOR_DOWN);
 
 // --- Constantes de la simulación (tuneables) ---
-const FRICTION       = 1.6;   // amortiguación de la velocidad (mayor = más frenado)
-const SPRING         = 0.55;  // retorno al centro (mayor = vuelve antes al color base)
-const ACCEL_SMOOTH   = 0.5;   // suavizado de la aceleración (0..1)
-const COLOR_SMOOTH   = 0.20;  // suavizado del color final (0..1, menor = más lento)
+const FRICTION       = 1.0;   // amortiguación de la velocidad (mayor = más frenado)
+const SPRING         = 0.0;  // retorno al centro (mayor = vuelve antes al color base)
+const ACCEL_SMOOTH   = 0.7;   // suavizado de la aceleración (0..1)
+const COLOR_SMOOTH   = 0.30;  // suavizado del color final (0..1, menor = más lento)
 
 /* ------------------------------------------------------------
    2) ESTADO
