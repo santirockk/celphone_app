@@ -5,6 +5,7 @@
 
 body {
     height: 100vh;
+    padding: 20px;
     font-family: sans-serif;
     background-color: rgb(13, 13, 13);
     color: white;
