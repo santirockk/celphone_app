@@ -71,3 +71,7 @@ body {
     transform: scale(0.95);
     opacity: 0.85;
 }
+
+.giro {
+    white-space: pre-line;
+}

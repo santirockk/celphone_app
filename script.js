@@ -1,14 +1,6 @@
 /* ============================================================
    Box reactivo SOLO al desplazamiento (no a la rotación)
-   ------------------------------------------------------------
-   Teléfono acostado, pantalla hacia arriba:
-     +x derecha   → azul       -x izquierda → rojo
-     +y adelante  → verde      -y atrás     → negro
-     +z arriba    → blanco     -z abajo     → negro
-
-   • Se integra 2× acceleration (lineal, sin gravedad) → cm
-   • Onda triangular: 0=base, 30=full, 60=base, 90=full...
-   • Si el teléfono gira, se ignora el movimiento (rotation gate)
+   + Panel con RGB y valores del sensor siempre visible
    ============================================================ */
 
 const box      = document.getElementById('box');
@@ -36,18 +28,13 @@ const D_BACK    = delta(COLOR_BACK);
 const D_UP      = delta(COLOR_UP);
 const D_DOWN    = delta(COLOR_DOWN);
 
-// --- Física ---
-const ACCEL_SMOOTH  = 0.60;   // suavizado de la aceleración (0..1)
-const VELOCITY_DAMP = 1.8;    // frenado de la velocidad
-const BIAS_ALPHA    = 0.0005; // filtro lentísimo anti-deriva
-const NOISE_GATE    = 0.15;   // m/s²  ignora señales por debajo
-const MAX_ACCEL     = 15;     // m/s²  recorte anti-picos
-const COLOR_SMOOTH  = 0.35;   // suavizado visual del color
+const ACCEL_SMOOTH  = 0.60;
+const VELOCITY_DAMP = 1.8;
+const BIAS_ALPHA    = 0.0005;
+const NOISE_GATE    = 0.15;
+const MAX_ACCEL     = 15;
+const COLOR_SMOOTH  = 0.35;
 
-// --- Compuerta de rotación ---
-// Por debajo de ROT_SOFT (°/s) la lectura es válida al 100%.
-// Por encima de ROT_HARD la ignoramos por completo.
-// En medio se desvanece linealmente.
 const ROT_SOFT = 60;
 const ROT_HARD = 200;
 
@@ -56,11 +43,16 @@ const smoothAccel  = { x: 0, y: 0, z: 0 };
 const bias         = { x: 0, y: 0, z: 0 };
 const velocity     = { x: 0, y: 0, z: 0 };
 const position     = { x: 0, y: 0, z: 0 };
-const currentColor = [...BASE_COLOR];
 
+// Variables explícitas que verás en el panel
+let red   = BASE_COLOR[0];
+let green = BASE_COLOR[1];
+let blue  = BASE_COLOR[2];
+
+// Valores crudos de sensores
 const rawAccel       = { x: 0, y: 0, z: 0 };
-const rawRotation    = { a: 0, b: 0, g: 0 }; // grados/segundo
-const rawOrientation = { a: 0, b: 0, g: 0 }; // ángulos (solo display)
+const rawRotation    = { a: 0, b: 0, g: 0 };
+const rawOrientation = { a: 0, b: 0, g: 0 };
 let   lastGateFactor = 1;
 
 let lastTime      = performance.now();
@@ -71,11 +63,23 @@ let warnedNoLinear = false;
 
 /* ---------------- UTILS ---------------- */
 const clamp = (v, mn, mx) => (v < mn ? mn : v > mx ? mx : v);
-const tri = (x) => { const t = ((x % 2) + 2) % 2; return t < 1 ? t : 2 - t; };
+const tri   = (x) => { const t = ((x % 2) + 2) % 2; return t < 1 ? t : 2 - t; };
+
+/* ---------------- PANEL (siempre visible) ---------------- */
+function updatePanel() {
+  // El panel se escribe con innerText y variables explícitas (red, green, blue)
+  rgbEl.innerText = `RGB: (${red}, ${green}, ${blue})`;
+
+  giroEl.innerText =
+    `Giro °/s   α:${rawRotation.a.toFixed(1)}  β:${rawRotation.b.toFixed(1)}  γ:${rawRotation.g.toFixed(1)}\n` +
+    `Accel m/s² x:${rawAccel.x.toFixed(2)}  y:${rawAccel.y.toFixed(2)}  z:${rawAccel.z.toFixed(2)}\n` +
+    `Orient °   α:${rawOrientation.a.toFixed(0)}  β:${rawOrientation.b.toFixed(0)}  γ:${rawOrientation.g.toFixed(0)}\n` +
+    `Pos cm     x:${position.x.toFixed(1)}  y:${position.y.toFixed(1)}  z:${position.z.toFixed(1)}\n` +
+    `Gate: ${lastGateFactor.toFixed(2)}  ·  ${active ? 'activo' : 'inactivo'}`;
+}
 
 /* ---------------- SENSOR ---------------- */
 function onMotion(event) {
-  // 1) Aceleración lineal SIN gravedad. Es la única que nos vale.
   const a = event.acceleration;
   const hasLinear = a && a.x !== null && a.x !== undefined && !isNaN(a.x);
 
@@ -85,7 +89,7 @@ function onMotion(event) {
       alert(
         'Este navegador no entrega aceleración lineal (sin gravedad).\n\n' +
         'Sin ella, girar el teléfono también movería el color.\n\n' +
-        'Prueba con Chrome en Android. Si no, el efecto será impreciso.'
+        'Prueba con Chrome en Android.'
       );
     }
     return;
@@ -93,7 +97,7 @@ function onMotion(event) {
 
   rawAccel.x = a.x; rawAccel.y = a.y; rawAccel.z = a.z;
 
-  // 2) Compuerta de rotación (rotationRate viene en °/s).
+  // Compuerta de rotación
   const rot = event.rotationRate;
   let gate = 1;
   if (rot && rot.alpha !== null && rot.alpha !== undefined) {
@@ -102,20 +106,17 @@ function onMotion(event) {
     rawRotation.g = rot.gamma || 0;
 
     const rotMag = Math.hypot(rawRotation.a, rawRotation.b, rawRotation.g);
-
     if (rotMag > ROT_SOFT) {
       gate = Math.max(0, 1 - (rotMag - ROT_SOFT) / (ROT_HARD - ROT_SOFT));
     }
   }
   lastGateFactor = gate;
 
-  // 3) Primer dato válido → apagamos el timeout.
   if (!sensorWorking) {
     sensorWorking = true;
     if (sensorTimeout) { clearTimeout(sensorTimeout); sensorTimeout = null; }
   }
 
-  // 4) Suavizado + bias (aplicado sobre la lectura gated).
   const gx = a.x * gate;
   const gy = a.y * gate;
   const gz = a.z * gate;
@@ -127,13 +128,16 @@ function onMotion(event) {
   bias.x += (gx - bias.x) * BIAS_ALPHA;
   bias.y += (gy - bias.y) * BIAS_ALPHA;
   bias.z += (gz - bias.z) * BIAS_ALPHA;
+
+  // Refresca el panel al menos con cada evento (por si el loop no corre).
+  updatePanel();
 }
 
-// Solo para mostrar los ángulos en el panel (no afecta al color).
 function onOrientation(event) {
   rawOrientation.a = event.alpha ?? 0;
   rawOrientation.b = event.beta  ?? 0;
   rawOrientation.g = event.gamma ?? 0;
+  updatePanel();
 }
 
 /* ---------------- FÍSICA ---------------- */
@@ -142,12 +146,11 @@ function integrate(dt) {
   let ay = smoothAccel.y - bias.y;
   let az = smoothAccel.z - bias.z;
 
-  // Noise gate: en reposo no mueve nada.
   if (Math.abs(ax) < NOISE_GATE) ax = 0;
   if (Math.abs(ay) < NOISE_GATE) ay = 0;
   if (Math.abs(az) < NOISE_GATE) az = 0;
 
-  ax = clamp(ax, -MAX_ACCEL, MAX_ACCEL) * 100; // → cm/s²
+  ax = clamp(ax, -MAX_ACCEL, MAX_ACCEL) * 100;
   ay = clamp(ay, -MAX_ACCEL, MAX_ACCEL) * 100;
   az = clamp(az, -MAX_ACCEL, MAX_ACCEL) * 100;
 
@@ -165,7 +168,7 @@ function integrate(dt) {
   position.z += velocity.z * dt;
 }
 
-/* ---------------- POSICIÓN → COLOR + UI ---------------- */
+/* ---------------- POSICIÓN → COLOR ---------------- */
 function updateColor() {
   const px = position.x, py = position.y, pz = position.z;
 
@@ -185,33 +188,27 @@ function updateColor() {
   g = clamp(g, 0, 255);
   b = clamp(b, 0, 255);
 
-  currentColor[0] += (r - currentColor[0]) * COLOR_SMOOTH;
-  currentColor[1] += (g - currentColor[1]) * COLOR_SMOOTH;
-  currentColor[2] += (b - currentColor[2]) * COLOR_SMOOTH;
+  // Suavizado y asignación a las variables explícitas
+  red   += (r - red)   * COLOR_SMOOTH;
+  green += (g - green) * COLOR_SMOOTH;
+  blue  += (b - blue)  * COLOR_SMOOTH;
 
-  const cr = currentColor[0]|0;
-  const cg = currentColor[1]|0;
-  const cb = currentColor[2]|0;
-
-  box.style.backgroundColor = `rgb(${cr},${cg},${cb})`;
-
-  // Panel
-  rgbEl.textContent = `RGB: rgb(${cr}, ${cg}, ${cb})  ·  gate: ${lastGateFactor.toFixed(2)}`;
-
-  giroEl.textContent =
-    `Accel lineal m/s²  → x:${rawAccel.x.toFixed(2)}  y:${rawAccel.y.toFixed(2)}  z:${rawAccel.z.toFixed(2)}\n` +
-    `Rotación °/s      → α:${rawRotation.a.toFixed(0)}  β:${rawRotation.b.toFixed(0)}  γ:${rawRotation.g.toFixed(0)}\n` +
-    `Orientación °     → α:${rawOrientation.a.toFixed(0)}  β:${rawOrientation.b.toFixed(0)}  γ:${rawOrientation.g.toFixed(0)}\n` +
-    `Posición cm       → x:${position.x.toFixed(1)}  y:${position.y.toFixed(1)}  z:${position.z.toFixed(1)}`;
+  box.style.backgroundColor = `rgb(${red|0},${green|0},${blue|0})`;
 }
 
 /* ---------------- LOOP ---------------- */
 function loop(now) {
-  if (!active) return;
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
-  integrate(dt);
-  updateColor();
+
+  if (active) {
+    integrate(dt);
+    updateColor();
+  }
+
+  // El panel se actualiza SIEMPRE, aunque no esté activo.
+  updatePanel();
+
   requestAnimationFrame(loop);
 }
 
@@ -250,11 +247,8 @@ async function start() {
   }, 2000);
 
   overlay.classList.add('hidden');
-  setTimeout(() => {
-    active = true;
-    lastTime = performance.now();
-    requestAnimationFrame(loop);
-  }, 100);
+  active = true;
+  lastTime = performance.now();
 }
 
 startBtn.addEventListener('click', start);
@@ -262,3 +256,8 @@ startBtn.addEventListener('click', start);
 /* ---------------- ALERTS GLOBALES ---------------- */
 window.addEventListener('error', (e) => alert('Error JS: ' + (e.message || 'desconocido')));
 window.addEventListener('unhandledrejection', (e) => alert('Promesa rechazada: ' + (e.reason?.message ?? e.reason)));
+
+/* ---------------- ARRANQUE INMEDIATO DEL PANEL ---------------- */
+// Pinta el panel desde el primer instante, ANTES de pulsar el botón.
+updatePanel();
+requestAnimationFrame(loop);
